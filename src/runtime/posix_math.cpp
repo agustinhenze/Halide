@@ -30,6 +30,15 @@ INLINE float float_from_bits(uint32_t bits) {
     return u.as_float;
 }
 
+INLINE uint32_t bits_from_float(float val) {
+    union {
+        uint32_t as_uint;
+        float as_float;
+    } u;
+    u.as_float = val;
+    return u.as_uint;
+}
+
 INLINE float nan_f32() {
     return float_from_bits(0x7fc00000);
 }
@@ -67,6 +76,64 @@ INLINE double minval_f64() {
     return double_from_bits(UINT64_C(0xffefffffffffffff));
 }
 
+union FP32 {
+    uint32_t as_uint;
+    float as_float;
+};
+
+INLINE float halide_f16_to_f32(uint16_t x) {
+    uint32_t sign = (x & 0x8000) << 16;
+    uint32_t abs = (x & 0x7fff);
+
+    // For normal numbers, adjust the exponent and shift the mantissa.
+    uint32_t result = (112 << 23) + (abs << 13);
+
+    if (abs < 0x0400) {
+        // Subnormal half floats can be normalized by treating the bit pattern
+        // as "1.m * 2e-14" and subtracting 2e-14 from it. This also works for
+        // zero.
+        result = (113 << 23) + (abs << 13);
+        float tmp = float_from_bits(result) - 1.f/(1 << 14);
+        result = bits_from_float(tmp);
+    } else if (abs >= 0x7c00) {
+        // For infinities and NaNs, simply set the exponent to 255.
+        result |= 0x7f800000;
+    }
+    return float_from_bits(sign | result);
 }
 
+INLINE uint16_t halide_f32_to_f16(float x) {
+    uint32_t u = bits_from_float(x);
+    const uint16_t sign = (u & 0x80000000) >> 16;
+    const uint32_t exp = (u & 0x7f800000) >> 23;
+    const int signed_exp = exp - 127;
 
+    uint16_t result;
+    if (signed_exp > 15) {
+        uint32_t m = u & 0x007fffff;
+        if (exp == 255 && m != 0) {
+            // Map float NaN to half NaN;
+            result = sign | 0x7e00;
+        } else {
+            // Map everything else to half-precision infinity
+            result = sign | 0x7c00;
+        }
+    } else {
+        // Round to 10 binary digits of precision. This can be done by adding
+        // the magic number +-2^(exp+13), which discards the trailing 13
+        // digits. For subnormals we have to discard one extra digit since the
+        // leading "1" is stored explicitly.
+        int is_subnormal = signed_exp < -14;
+        float magic = float_from_bits((sign << 16) | ((exp + 13 + is_subnormal) << 23));
+        uint16_t m = bits_from_float(magic + x) & 0xffff;
+
+        // The main difficulty is overflow due to rounding.
+        int overflow_bit = m >> (11 - is_subnormal);
+        int new_exp = signed_exp + 15 + overflow_bit;
+        new_exp = (new_exp < 0) ? 0 : (new_exp > 30) ? 31 : new_exp;
+        result = sign | (new_exp << 10) | (m & 0x3ff);
+    }
+    return result;
+}
+
+}

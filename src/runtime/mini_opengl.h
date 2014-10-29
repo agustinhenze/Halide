@@ -135,6 +135,8 @@ typedef void (*PFNGLGETINTEGERV)(GLenum pname, GLint *data);
 
 // ---------- OpenGL 3.0 ----------
 
+#define GL_HALF_FLOAT 0x140b
+
 #define GL_MAJOR_VERSION 0x821B
 #define GL_MINOR_VERSION 0x821C
 #define GL_NUM_EXTENSIONS 0x821D
@@ -144,6 +146,12 @@ typedef void (*PFNGLGETINTEGERV)(GLenum pname, GLint *data);
 #define GL_RGBA32F 0x8814
 #define GL_RGB32F 0x8815
 #define GL_LUMINANCE32F 0x8818
+
+#define GL_R16F 0x822D
+#define GL_RG16F 0x822F
+#define GL_RGBA16F 0x881A
+#define GL_RGB16F 0x881B
+
 
 // GL_ARB_framebuffer_object
 #define GL_FRAMEBUFFER_COMPLETE 0x8CD5

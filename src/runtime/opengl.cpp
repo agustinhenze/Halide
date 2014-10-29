@@ -90,7 +90,7 @@ struct Argument {
 
     // The elementary data type of the argument
     enum Type {
-        Void, Bool, Float, Int8, Int16, Int32, UInt8, UInt16, UInt32
+        Void, Bool, Float, Half, Int8, Int16, Int32, UInt8, UInt16, UInt32
     };
 
     char *name;
@@ -273,6 +273,8 @@ WEAK Argument *parse_argument(void *user_context, const char *src,
     Argument::Type type = Argument::Void;
     if ((name = match_prefix(src, "float "))) {
         type = Argument::Float;
+    } else if ((name = match_prefix(src, "half "))) {
+        type = Argument::Half;
     } else if ((name = match_prefix(src, "bool "))) {
         type = Argument::Bool;
     } else if ((name = match_prefix(src, "int8_t "))) {
@@ -655,7 +657,9 @@ WEAK bool get_texture_format(void *user_context, buffer_t *buf,
     if (buf->elem_size == 1) {
         *type = GL_UNSIGNED_BYTE;
     } else if (buf->elem_size == 2) {
-        *type = GL_UNSIGNED_SHORT;
+        // TODO: find some way to store the type in buffer_t
+        // TODO: revert change before submitting
+        *type = GL_HALF_FLOAT; // GL_UNSIGNED_SHORT;
     } else if (buf->elem_size == 4) {
         *type = GL_FLOAT;
     } else {
@@ -697,6 +701,13 @@ WEAK bool get_texture_format(void *user_context, buffer_t *buf,
             case GL_RG: *internal_format = GL_RG32F; break;
             case GL_RGB: *internal_format = GL_RGB32F; break;
             case GL_RGBA: *internal_format = GL_RGBA32F; break;
+            }
+        } else if (*type == GL_HALF_FLOAT) {
+            switch (*format) {
+            case GL_RED: *internal_format = GL_R16F; break;
+            case GL_RG: *internal_format = GL_RG16F; break;
+            case GL_RGB: *internal_format = GL_RGB16F; break;
+            case GL_RGBA: *internal_format = GL_RGBA16F; break;
             }
         } else {
             *internal_format = *format;
@@ -981,7 +992,7 @@ WEAK int halide_opengl_copy_to_dev(void *user_context, buffer_t *buf) {
 
     // To use TexSubImage2D directly, the colors must be stored interleaved
     // and rows must be stored consecutively.
-    bool is_interleaved = (buf->stride[2] == 1 && buf->stride[0] == buf->extent[2]);
+    bool is_interleaved = (buf->extent[2] <= 1) || (buf->stride[2] == 1 && buf->stride[0] == buf->extent[2]);
     bool is_packed = (buf->stride[1] == buf->extent[0] * buf->stride[0]);
     if (is_interleaved && is_packed) {
         ST.PixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -1006,11 +1017,14 @@ WEAK int halide_opengl_copy_to_dev(void *user_context, buffer_t *buf) {
             halide_to_interleaved<uint8_t>(buf, (uint8_t*)tmp, width, height, buf->extent[2]);
             break;
         case GL_UNSIGNED_SHORT:
+        case GL_HALF_FLOAT:
             halide_to_interleaved<uint16_t>(buf, (uint16_t*)tmp, width, height, buf->extent[2]);
             break;
         case GL_FLOAT:
             halide_to_interleaved<float>(buf, (float*)tmp, width, height, buf->extent[2]);
             break;
+        default:
+            error(user_context) << "Invalid texture format\n";
         }
 
         ST.PixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -1073,7 +1087,7 @@ WEAK int halide_opengl_copy_to_host(void *user_context, buffer_t *buf) {
 
     // To download the texture directly, the colors must be stored interleaved
     // and rows must be stored consecutively.
-    bool is_interleaved = (buf->stride[2] == 1 && buf->stride[0] == buf->extent[2]);
+    bool is_interleaved = (buf->extent[2] <= 1) || (buf->stride[2] == 1 && buf->stride[0] == buf->extent[2]);
     bool is_packed = (buf->stride[1] == buf->extent[0] * buf->stride[0]);
     if (is_interleaved && is_packed) {
         ST.PixelStorei(GL_PACK_ALIGNMENT, 1);
@@ -1106,6 +1120,7 @@ WEAK int halide_opengl_copy_to_host(void *user_context, buffer_t *buf) {
             interleaved_to_halide<uint8_t>(buf, (uint8_t*)tmp, width, height, buf->extent[2]);
             break;
         case GL_UNSIGNED_SHORT:
+        case GL_HALF_FLOAT:
             interleaved_to_halide<uint16_t>(buf, (uint16_t*)tmp, width, height, buf->extent[2]);
             break;
         case GL_FLOAT:
@@ -1251,6 +1266,7 @@ WEAK int halide_opengl_dev_run(
                 break;
             }
             case Argument::Void:
+            case Argument::Half:
                 error(user_context) <<"GLSL: Encountered invalid kernel argument type";
                 return 1;
             }

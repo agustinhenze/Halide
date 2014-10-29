@@ -159,7 +159,7 @@ void CodeGen::init_module() {
     i16 = llvm::Type::getInt16Ty(*context);
     i32 = llvm::Type::getInt32Ty(*context);
     i64 = llvm::Type::getInt64Ty(*context);
-    f16 = llvm::Type::getHalfTy(*context);
+    f16 = llvm::Type::getInt16Ty(*context);
     f32 = llvm::Type::getFloatTy(*context);
     f64 = llvm::Type::getDoubleTy(*context);
 }
@@ -709,6 +709,36 @@ void CodeGen::visit(const StringImm *op) {
     value = create_string_constant(op->value);
 }
 
+Value *CodeGen::call_intrin(Type result_type, const string &name, vector<Expr> args) {
+    vector<Value *> arg_values(args.size());
+    for (size_t i = 0; i < args.size(); i++) {
+        arg_values[i] = codegen(args[i]);
+    }
+
+    return call_intrin(llvm_type_of(result_type), name, arg_values);
+}
+
+Value *CodeGen::call_intrin(llvm::Type *result_type, const string &name, vector<Value *> arg_values) {
+    vector<llvm::Type *> arg_types(arg_values.size());
+    for (size_t i = 0; i < arg_values.size(); i++) {
+        arg_types[i] = arg_values[i]->getType();
+    }
+
+    llvm::Function *fn = module->getFunction(name);
+
+    if (!fn) {
+        FunctionType *func_t = FunctionType::get(result_type, arg_types, false);
+        fn = llvm::Function::Create(func_t, llvm::Function::ExternalLinkage, name, module);
+        fn->setCallingConv(CallingConv::C);
+    }
+
+    CallInst *call = builder->CreateCall(fn, arg_values);
+    call->setDoesNotAccessMemory();
+    call->setDoesNotThrow();
+
+    return call;
+}
+
 void CodeGen::visit(const Cast *op) {
     Halide::Type src = op->value.type();
     Halide::Type dst = op->type;
@@ -726,6 +756,16 @@ void CodeGen::visit(const Cast *op) {
         // depending on the source type. Narrowing integer casts
         // always truncate.
         value = builder->CreateIntCast(value, llvm_dst, src.is_int());
+    } else if (dst.is_float() && dst.bits == 16) {
+        // LLVM has only limited support for casting to Float(16), so call
+        // custom conversion code here. We always go through Float(32).
+        Expr arg = (src.is_float() && dst.bits == 32)
+            ? op->value : cast<float>(op->value);
+        value = call_intrin(UInt(16), "halide_f32_to_f16", vec(arg));
+    } else if (src.is_float() && src.bits == 16) {
+        //  half->float
+        internal_assert(dst.is_float() && dst.bits == 32);
+        value = call_intrin(dst, "halide_f16_to_f32", vec(reinterpret<uint16_t>(op->value)));
     } else if (src.is_float() && dst.is_int()) {
         value = builder->CreateFPToSI(value, llvm_dst);
     } else if (src.is_float() && dst.is_uint()) {

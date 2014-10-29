@@ -514,6 +514,8 @@ void CodeGen_GLSL::compile(Stmt stmt, string name,
                 type_name = "uint16_t";
             } else if (t == Float(32)) {
                 type_name = "float";
+            } else if (t == Float(16)) {
+                type_name = "half";
             } else {
                 user_error << "GLSL: buffer " << args[i].name << " has invalid type " << t << ".\n";
             }

@@ -170,6 +170,12 @@ protected:
     /** Emit code that runs a statement. */
     void codegen(Stmt);
 
+    /** Generate a call to an LLVM or Halide intrinsic */
+    // @{
+    llvm::Value *call_intrin(Type t, const std::string &name, std::vector<Expr>);
+    llvm::Value *call_intrin(llvm::Type *t, const std::string &name, std::vector<llvm::Value *>);
+    // @}
+
     /** Codegen a vector Expr by codegenning each lane and combining. */
     void scalarize(Expr);
 
