@@ -1,0 +1,58 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# Uncomment this to turn on verbose mode.
+export DH_VERBOSE=1
+SRC_DIR := $(shell pwd)
+BUILD_DIR := $(SRC_DIR)/build
+PYTHON_BINDING := $(SRC_DIR)/python_bindings
+PYTHON_PACKAGE_NAME := python-halide
+LIB_PACKAGE_NAME := libhalide
+
+%:
+	dh $@ --parallel --buildsystem=cmake --builddirectory=$(BUILD_DIR)
+
+override_dh_auto_configure:
+	set -ex; \
+		mkdir -p $(BUILD_DIR); \
+		cd $(BUILD_DIR); \
+		cmake -D WITH_APPS=OFF \
+			-D WITH_TEST_CORRECTNESS=OFF \
+			-D WITH_TEST_ERROR=OFF \
+			-D WITH_TEST_GENERATORS=OFF \
+			-D WITH_TEST_OPENGL=OFF \
+			-D WITH_TEST_PERFORMANCE=OFF \
+			-D WITH_TEST_STATIC=OFF \
+			-D WITH_TEST_WARNING=OFF \
+			-D WITH_TUTORIALS=OFF \
+			-D HALIDE_SHARED_LIBRARY=OFF \
+			-D CMAKE_BUILD_TYPE=Release \
+			-D CMAKE_INSTALL_PREFIX=/usr \
+			-D LLVM_CONFIG=/usr/bin/llvm-config-3.5 \
+			$(SRC_DIR);
+
+override_dh_auto_install:
+	dh_auto_install --destdir=debian/$(LIB_PACKAGE_NAME)
+	cp $(BUILD_DIR)/include/*.h $(SRC_DIR)/include
+	set -ex; \
+		cd $(PYTHON_BINDING); \
+		make
+	dh_auto_configure --buildsystem=pybuild -D$(PYTHON_BINDING)
+	dh_auto_install --destdir=debian/$(PYTHON_PACKAGE_NAME) --buildsystem=pybuild  -D$(PYTHON_BINDING)
+	find debian/$(PYTHON_PACKAGE_NAME) -name "*.pyc" -exec rm -fv {} +
+	rm -rf debian/$(PYTHON_PACKAGE_NAME)/usr/lib/python2.7/dist-packages/halide/data
+
+override_dh_installexamples:
+	dh_installexamples -X.gitignore
+
+override_dh_auto_clean:
+	dh_auto_clean
+	set -ex; \
+		cd $(PYTHON_BINDING); \
+		make clean
+	dh_auto_clean --buildsystem=pybuild -D$(PYTHON_BINDING)
+	rm -f $(SRC_DIR)/include/*.h
+	rm -f $(SRC_DIR)/bin/*
+	rm -f $(PYTHON_BINDING)/bin/*
+	rm -rf $(PYTHON_BINDING)/halide/data/
+	rm -f debian/*substvars

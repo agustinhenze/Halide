@@ -1,0 +1,5 @@
+halide (20141203+git.26f51b8-1) UNRELEASED; urgency=medium
+
+  * Initial release. (Closes: #XXXXXX)
+
+ -- Agustin Henze <tin@debian.org>  Tue, 02 Dec 2014 17:52:39 -0300
